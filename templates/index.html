@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NetGuard — Phishing URL Detector</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  min-height: 100vh;
+  background: #0a0f1a;
+  color: #e2e8f0;
+  font-family: 'Inter', sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background:
+    radial-gradient(ellipse 80% 50% at 20% 20%, rgba(56,189,248,0.06), transparent),
+    radial-gradient(ellipse 60% 40% at 80% 80%, rgba(99,102,241,0.05), transparent);
+  pointer-events: none;
+}
+.card {
+  position: relative;
+  width: 100%; max-width: 580px;
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 20px;
+  padding: 48px 40px;
+  box-shadow: 0 25px 60px rgba(0,0,0,0.4);
+}
+.icon-wrap {
+  width: 56px; height: 56px;
+  background: linear-gradient(135deg, rgba(56,189,248,0.15), rgba(99,102,241,0.15));
+  border: 1px solid rgba(56,189,248,0.25);
+  border-radius: 14px;
+  display: grid; place-items: center;
+  font-size: 26px;
+  margin: 0 auto 24px;
+}
+h1 { font-size: 1.75rem; font-weight: 700; text-align: center; margin-bottom: 8px; letter-spacing: -0.02em; }
+.subtitle { text-align: center; color: #6b7280; font-size: 0.9rem; margin-bottom: 36px; line-height: 1.5; }
+form { display: flex; flex-direction: column; gap: 12px; }
+.input-wrap {
+  display: flex; align-items: center;
+  background: #0d1424;
+  border: 1.5px solid #1f2937;
+  border-radius: 12px; overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.input-wrap:focus-within { border-color: #38bdf8; box-shadow: 0 0 0 3px rgba(56,189,248,0.1); }
+.input-icon { padding: 0 14px; color: #4b5563; font-size: 15px; flex-shrink: 0; }
+input[type="text"] {
+  flex: 1; background: transparent; border: none; outline: none;
+  padding: 15px 12px 15px 0;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;
+  color: #e2e8f0; caret-color: #38bdf8;
+}
+input[type="text"]::placeholder { color: #374151; }
+button[type="submit"] {
+  background: #38bdf8; color: #0a0f1a; border: none;
+  padding: 15px; font-family: 'Inter', sans-serif;
+  font-size: 0.9rem; font-weight: 700;
+  border-radius: 10px; cursor: pointer;
+  transition: all 0.2s;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+button[type="submit"]:hover { background: #7dd3fc; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(56,189,248,0.25); }
+.examples { margin-top: 8px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.ex-label { font-size: 0.7rem; color: #4b5563; font-family: 'JetBrains Mono', monospace; }
+.ex-chip {
+  font-family: 'JetBrains Mono', monospace; font-size: 0.68rem;
+  color: #6b7280; background: transparent;
+  border: 1px solid #1f2937; border-radius: 6px;
+  padding: 4px 10px; cursor: pointer; transition: all 0.15s;
+}
+.ex-chip:hover { border-color: #38bdf8; color: #38bdf8; }
+.loading { display: none; text-align: center; padding: 20px 0; }
+.spinner {
+  width: 32px; height: 32px;
+  border: 2px solid #1f2937; border-top-color: #38bdf8;
+  border-radius: 50%; margin: 0 auto 12px;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { font-size: 0.8rem; color: #6b7280; font-family: 'JetBrains Mono', monospace; }
+.divider { display: flex; align-items: center; gap: 12px; margin: 28px 0 20px; }
+.divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: #1f2937; }
+.divider span { font-size: 0.7rem; color: #374151; font-family: 'JetBrains Mono', monospace; letter-spacing: 0.1em; white-space: nowrap; }
+.csv-section { background: #0d1424; border: 1px solid #1f2937; border-radius: 10px; padding: 16px; }
+.csv-label { font-size: 0.75rem; color: #6b7280; margin-bottom: 10px; }
+.csv-form { display: flex; gap: 8px; align-items: center; }
+.file-label {
+  flex: 1; display: flex; align-items: center; gap: 8px;
+  background: #111827; border: 1px dashed #374151;
+  border-radius: 8px; padding: 10px 14px; cursor: pointer;
+  transition: border-color 0.15s; font-size: 0.78rem; color: #6b7280;
+}
+.file-label:hover { border-color: #38bdf8; color: #38bdf8; }
+input[type="file"] { display: none; }
+.csv-btn {
+  background: transparent; border: 1px solid #374151; color: #9ca3af;
+  padding: 10px 16px; border-radius: 8px; font-size: 0.78rem;
+  font-family: 'Inter', sans-serif; font-weight: 600;
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.csv-btn:hover { border-color: #38bdf8; color: #38bdf8; }
+.note {
+  margin-top: 28px; display: flex; align-items: flex-start; gap: 8px;
+  padding: 12px 14px;
+  background: rgba(56,189,248,0.04); border: 1px solid rgba(56,189,248,0.12);
+  border-radius: 8px; font-size: 0.75rem; color: #6b7280; line-height: 1.5;
+}
+.brand { margin-top: 32px; font-size: 0.68rem; color: #374151; font-family: 'JetBrains Mono', monospace; text-align: center; }
+@media(max-width:480px){ .card{padding:32px 24px;} h1{font-size:1.4rem;} }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="icon-wrap">🛡️</div>
+  <h1>Phishing URL Detector</h1>
+  <p class="subtitle">Enter any website URL. Our ML model analyzes 30 security features and tells you if it's safe or a phishing attempt.</p>
+
+  <form id="urlForm" action="/predict-url" method="POST" onsubmit="handleSubmit()">
+    <div class="input-wrap">
+      <span class="input-icon">🔗</span>
+      <input type="text" name="url" id="urlInput" placeholder="https://example.com" autocomplete="off" spellcheck="false" required>
+    </div>
+    <button type="submit">🔍 Analyze URL</button>
+  </form>
+
+  <div class="examples">
+    <span class="ex-label">Try →</span>
+    <button class="ex-chip" onclick="fillUrl('https://google.com')">google.com</button>
+    <button class="ex-chip" onclick="fillUrl('http://paypal-secure-login.tk/verify')">paypal-secure-login.tk</button>
+    <button class="ex-chip" onclick="fillUrl('https://github.com')">github.com</button>
+    <button class="ex-chip" onclick="fillUrl('http://192.168.1.1/login')">IP-based URL</button>
+  </div>
+
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <div class="loading-text">Extracting features & running ML model...</div>
+  </div>
+
+  <div class="divider"><span>OR BATCH SCAN VIA CSV</span></div>
+
+  <div class="csv-section">
+    <div class="csv-label">📄 Upload a CSV with 30 feature columns for batch prediction</div>
+    <form action="/predict" method="POST" enctype="multipart/form-data">
+      <div class="csv-form">
+        <label class="file-label" for="csvFile">
+          📂 <span id="fileName">Choose CSV file...</span>
+        </label>
+        <input type="file" id="csvFile" name="file" accept=".csv"
+               onchange="document.getElementById('fileName').textContent = this.files[0]?.name || 'Choose CSV file...'">
+        <button type="submit" class="csv-btn">Upload →</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="note">
+    <span>ℹ️</span>
+    <span>Results are generated by an ML model trained on 30 URL security features. Always exercise caution with unfamiliar URLs.</span>
+  </div>
+</div>
+<div class="brand">NetGuard · Network Security System · ML v2.0</div>
+
+<script>
+function fillUrl(url) {
+  document.getElementById('urlInput').value = url;
+  document.getElementById('urlInput').focus();
+}
+function handleSubmit() {
+  document.getElementById('urlForm').style.opacity = '0.4';
+  document.getElementById('urlForm').style.pointerEvents = 'none';
+  document.querySelector('.examples').style.display = 'none';
+  document.getElementById('loading').style.display = 'block';
+}
+
+</script>
+</body>
+</html>
