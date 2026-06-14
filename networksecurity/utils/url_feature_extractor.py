@@ -1,181 +1,239 @@
+"""
+URL Feature Extractor
+Converts a raw URL into the 30 features expected by the phishing detection model.
+All features return -1 (phishing indicator), 0 (suspicious), or 1 (legitimate).
+"""
+
 import re
 import socket
-import urllib.parse
+import urllib.request
+from urllib.parse import urlparse
+import ipaddress
+
+
+def _safe_domain(netloc: str) -> str:
+    return netloc.lower().replace("www.", "")
+
+
+def _host_from_domain(domain: str) -> str:
+    return domain.split(":")[0]
+
+
+def _compute_having_ip_address(domain: str) -> int:
+    try:
+        ipaddress.ip_address(_host_from_domain(domain))
+        return -1
+    except ValueError:
+        return 1
+
+
+def _compute_url_length(url: str) -> int:
+    length = len(url)
+    if length < 54:
+        return 1
+    if length <= 75:
+        return 0
+    return -1
+
+
+def _compute_shortining_service(domain: str) -> int:
+    shorteners = [
+        "bit.ly", "goo.gl", "tinyurl", "ow.ly", "t.co", "is.gd",
+        "buff.ly", "short.link", "rb.gy", "cutt.ly", "tiny.cc"
+    ]
+    return -1 if any(s in domain for s in shorteners) else 1
+
+
+def _compute_having_sub_domain(domain: str) -> int:
+    dots = domain.count(".")
+    if dots == 1:
+        return 1
+    if dots == 2:
+        return 0
+    return -1
+
+
+def _compute_domain_registration_length(domain: str) -> int:
+    suspicious_tlds = [
+        ".tk", ".ml", ".ga", ".cf", ".gq", ".xyz", ".top",
+        ".click", ".loan", ".win", ".bid", ".racing", ".stream"
+    ]
+    return -1 if any(domain.endswith(t) for t in suspicious_tlds) else 1
+
+
+def _compute_port(parsed) -> int:
+    port = parsed.port
+    return 1 if port is None or port in [80, 443] else -1
+
+
+def _compute_abnormal_url(domain: str) -> int:
+    try:
+        socket.gethostbyname(_host_from_domain(domain))
+        return 1
+    except Exception:
+        return -1
+
+
+def _compute_redirect(full_url: str) -> int:
+    redirects = full_url.count("//") - 1
+    return 0 if redirects <= 1 else -1
+
+
+def _compute_age_of_domain(domain: str) -> int:
+    trusted_tlds = [".com", ".org", ".edu", ".gov", ".net", ".co.uk", ".ac.in"]
+    return 1 if any(domain.endswith(t) for t in trusted_tlds) else -1
+
+
+def _compute_dns_record(domain: str) -> int:
+    try:
+        socket.gethostbyname(_host_from_domain(domain))
+        return 1
+    except Exception:
+        return -1
+
+
+def _compute_web_traffic(domain: str) -> int:
+    known_domains = [
+        "google", "youtube", "facebook", "twitter", "instagram",
+        "linkedin", "microsoft", "apple", "amazon", "github",
+        "wikipedia", "reddit", "paypal", "netflix", "spotify"
+    ]
+    return 1 if any(k in domain for k in known_domains) else -1
+
+
+def _compute_links_pointing_to_page(features: dict) -> int:
+    if features["web_traffic"] == 1:
+        return 1
+    if features["having_IP_Address"] == -1:
+        return -1
+    return 0
+
+
+def _compute_statistical_report(full_url: str, sslfinal_state: int) -> int:
+    phishing_keywords = [
+        "secure", "account", "update", "login", "signin",
+        "verify", "banking", "confirm", "password", "credential"
+    ]
+    phish_score = sum(1 for kw in phishing_keywords if kw in full_url)
+    if phish_score >= 2:
+        return -1
+    if phish_score == 1 and sslfinal_state == -1:
+        return -1
+    return 1
+
+
+def _normalize_url(url: str) -> str:
+    if url.startswith(("http://", "https://")):
+        return url
+    return "http://" + url
+
+
+def _has_at_symbol(url: str) -> int:
+    return -1 if "@" in url else 1
+
+
+def _double_slash_redirecting(full_url: str) -> int:
+    return -1 if full_url.rfind("//") > 7 else 1
+
+
+def _prefix_suffix(domain: str) -> int:
+    return -1 if "-" in domain else 1
+
+
+def _favicon(scheme: str) -> int:
+    return 1 if scheme == "https" else -1
+
+
+def _links_in_tags(scheme: str) -> int:
+    return 1 if scheme == "https" else -1
+
+
+def _request_url(path: str) -> int:
+    return -1 if len(re.findall(r'https?://', path)) > 0 else 1
+
+
+def _url_of_anchor(url: str) -> int:
+    return -1 if "#" in url and len(url.split("#")[1]) > 10 else 1
+
+
+def _sfh(full_url: str) -> int:
+    return -1 if "about:blank" in full_url or "javascript:" in full_url else 1
+
+
+def _submitting_to_email(full_url: str) -> int:
+    return -1 if "mailto:" in full_url else 1
+
+
+def _on_mouseover(full_url: str) -> int:
+    return -1 if "onmouseover" in full_url else 1
+
+
+def _rightclick(full_url: str) -> int:
+    return -1 if "contextmenu" in full_url or "rightclick" in full_url else 1
+
+
+def _popupwindow(full_url: str) -> int:
+    return -1 if "popup" in full_url or "alert(" in full_url else 1
+
+
+def _iframe(full_url: str) -> int:
+    return -1 if "iframe" in full_url else 1
+
+
+def _build_primary_features(url: str, parsed, domain: str, path: str, full_url: str) -> dict:
+    return {
+        "having_IP_Address": _compute_having_ip_address(domain),
+        "URL_Length": _compute_url_length(url),
+        "Shortining_Service": _compute_shortining_service(domain),
+        "having_At_Symbol": _has_at_symbol(url),
+        "double_slash_redirecting": _double_slash_redirecting(full_url),
+        "Prefix_Suffix": _prefix_suffix(domain),
+        "having_Sub_Domain": _compute_having_sub_domain(domain),
+        "SSLfinal_State": 1 if parsed.scheme == "https" else -1,
+        "Domain_registeration_length": _compute_domain_registration_length(domain),
+        "Favicon": _favicon(parsed.scheme),
+        "port": _compute_port(parsed),
+        "HTTPS_token": -1 if "https" in domain else 1,
+        "Request_URL": _request_url(path),
+        "URL_of_Anchor": _url_of_anchor(url),
+        "Links_in_tags": _links_in_tags(parsed.scheme),
+        "SFH": _sfh(full_url),
+        "Submitting_to_email": _submitting_to_email(full_url),
+        "Abnormal_URL": _compute_abnormal_url(domain),
+        "Redirect": _compute_redirect(full_url),
+        "on_mouseover": _on_mouseover(full_url),
+        "RightClick": _rightclick(full_url),
+        "popUpWidnow": _popupwindow(full_url),
+        "Iframe": _iframe(full_url),
+        "age_of_domain": _compute_age_of_domain(domain),
+        "DNSRecord": _compute_dns_record(domain),
+        "web_traffic": _compute_web_traffic(domain),
+    }
+
+
+def _add_secondary_features(features: dict, parsed, full_url: str) -> None:
+    features["Page_Rank"] = 1 if features["DNSRecord"] == 1 and parsed.scheme == "https" else -1
+    features["Google_Index"] = 1 if features["DNSRecord"] == 1 else -1
+    features["Links_pointing_to_page"] = _compute_links_pointing_to_page(features)
+    features["Statistical_report"] = _compute_statistical_report(full_url, features["SSLfinal_State"])
 
 
 def extract_features(url: str) -> dict:
-    """Extract features from a URL. Refactored to reduce cognitive complexity."""
-    if not url.startswith(('http://', 'https://')):
-        url = 'http://' + url
+    """Extract all 30 phishing detection features from a URL."""
 
-    try:
-        parsed = urllib.parse.urlparse(url)
-    except Exception:
-        return {f: -1 for f in FEATURE_NAMES}
-
-    hostname = parsed.hostname or ''
-    path = parsed.path or ''
-    query = parsed.query or ''
-    scheme = parsed.scheme or ''
+    url = _normalize_url(url)
+    parsed = urlparse(url)
+    domain = _safe_domain(parsed.netloc)
+    path = parsed.path
     full_url = url.lower()
 
-    ip_pattern = re.compile(r'(([01]?\d\d?|2[0-4]\d|25[0-5])\.){3}([01]?\d\d?|2[0-4]\d|25[0-5])')
-
-    def ip_feature():
-        return -1 if ip_pattern.search(hostname) else 1
-
-    def url_length_feature():
-        l = len(url)
-        if l < 54:
-            return 1
-        if l <= 75:
-            return 0
-        return -1
-
-    def shortener_feature():
-        shorteners = ('bit.ly','tinyurl','goo.gl','t.co','ow.ly','is.gd',
-                      'buff.ly','adf.ly','short.link','rebrand.ly')
-        return -1 if any(s in full_url for s in shorteners) else 1
-
-    def at_symbol():
-        return -1 if '@' in url else 1
-
-    def double_slash():
-        return -1 if url.rfind('//') > 6 else 1
-
-    def prefix_suffix():
-        return -1 if '-' in hostname else 1
-
-    def subdomain():
-        dots = hostname.count('.')
-        if dots == 1:
-            return 1
-        if dots == 2:
-            return 0
-        return -1
-
-    def ssl_state():
-        return 1 if scheme == 'https' else -1
-
-    suspicious_tlds = ('.tk','.ml','.ga','.cf','.gq','.xyz','.top',
-                       '.click','.loan','.win','.bid','.stream')
-    tld = '.' + hostname.split('.')[-1] if '.' in hostname else ''
-
-    def suspicious_tld_feature():
-        return -1 if tld in suspicious_tlds else 1
-
-    def favicon():
-        return -1 if ip_pattern.search(hostname) else 1
-
-    def port_feature():
-        port = parsed.port
-        return -1 if port not in (80, 443, 21, 22, 25, 110, None) else 1
-
-    def https_token():
-        return -1 if 'https' in hostname else 1
-
-    def request_url():
-        return 1 if path.count('/') <= 3 else -1
-
-    def url_of_anchor():
-        return -1 if len(query) > 50 else 1
-
-    def static_zero():
-        return 0
-
-    def sfh():
-        return -1 if 'blank' in full_url else 1
-
-    def submitting_email():
-        return -1 if 'mailto:' in full_url else 1
-
-    def abnormal_url():
-        return 1 if hostname in url else -1
-
-    def redirect_feature():
-        rc = full_url.count('redirect') + full_url.count('redir') + full_url.count('goto')
-        return 1 if rc > 1 else 0
-
-    def static_one():
-        return 1
-
-    def age_of_domain():
-        return -1 if tld in suspicious_tlds else 1
-
-    def dns_record():
-        try:
-            socket.gethostbyname(hostname)
-            return 1
-        except Exception:
-            return -1
-
-    def web_traffic():
-        known_domains = ('google','facebook','youtube','amazon','twitter','instagram',
-                         'linkedin','microsoft','apple','netflix','github','wikipedia',
-                         'reddit','paypal','ebay','yahoo','bing','dropbox','spotify')
-        return 1 if any(k in hostname for k in known_domains) else -1
-
-    def page_rank(dns, web):
-        return 1 if (scheme == 'https' and web == 1) else -1
-
-    def google_index(dns):
-        return 1 if dns == 1 else -1
-
-    def statistical_report():
-        phish_keywords = ('login','signin','verify','secure','account','update',
-                          'confirm','banking','payment','password','credential',
-                          'suspended','alert','unlock','validate','recover')
-        phish_count = sum(1 for k in phish_keywords if k in full_url)
-        return -1 if phish_count >= 2 else 1
-
-    features = {
-        'having_IP_Address': ip_feature(),
-        'URL_Length': url_length_feature(),
-        'Shortining_Service': shortener_feature(),
-        'having_At_Symbol': at_symbol(),
-        'double_slash_redirecting': double_slash(),
-        'Prefix_Suffix': prefix_suffix(),
-        'having_Sub_Domain': subdomain(),
-        'SSLfinal_State': ssl_state(),
-        'Domain_registeration_length': suspicious_tld_feature(),
-        'Favicon': favicon(),
-        'port': port_feature(),
-        'HTTPS_token': https_token(),
-        'Request_URL': request_url(),
-        'URL_of_Anchor': url_of_anchor(),
-        'Links_in_tags': static_zero(),
-        'SFH': sfh(),
-        'Submitting_to_email': submitting_email(),
-        'Abnormal_URL': abnormal_url(),
-        'Redirect': redirect_feature(),
-        'on_mouseover': static_one(),
-        'RightClick': static_one(),
-        'popUpWidnow': static_one(),
-        'Iframe': static_one(),
-        'age_of_domain': age_of_domain(),
-    }
-
-    features['DNSRecord'] = dns_record()
-    features['web_traffic'] = web_traffic()
-    features['Page_Rank'] = page_rank(features['DNSRecord'], features['web_traffic'])
-    features['Google_Index'] = google_index(features['DNSRecord'])
-    features['Links_pointing_to_page'] = static_zero()
-    features['Statistical_report'] = statistical_report()
+    features = _build_primary_features(url, parsed, domain, path, full_url)
+    _add_secondary_features(features, parsed, full_url)
 
     return features
 
 
-FEATURE_NAMES = [
-    'having_IP_Address','URL_Length','Shortining_Service','having_At_Symbol',
-    'double_slash_redirecting','Prefix_Suffix','having_Sub_Domain','SSLfinal_State',
-    'Domain_registeration_length','Favicon','port','HTTPS_token','Request_URL',
-    'URL_of_Anchor','Links_in_tags','SFH','Submitting_to_email','Abnormal_URL',
-    'Redirect','on_mouseover','RightClick','popUpWidnow','Iframe','age_of_domain',
-    'DNSRecord','web_traffic','Page_Rank','Google_Index','Links_pointing_to_page',
-    'Statistical_report'
-]
-
-
 def features_to_dataframe(features: dict):
+    """Convert feature dict to pandas DataFrame for model input."""
     import pandas as pd
-    return pd.DataFrame([features])[FEATURE_NAMES]
+    return pd.DataFrame([features])

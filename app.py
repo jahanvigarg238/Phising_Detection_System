@@ -25,7 +25,7 @@ from networksecurity.utils.main_utils.utils import load_object
 from networksecurity.utils.ml_utils.model.estimator import NetworkModel
 
 # NEW: URL feature extractor
-from url_feature_extractor import extract_features, features_to_dataframe
+from networksecurity.utils.url_feature_extractor import extract_features, features_to_dataframe
 
 client = pymongo.MongoClient(mongo_db_url, tlsCAFile=ca)
 
